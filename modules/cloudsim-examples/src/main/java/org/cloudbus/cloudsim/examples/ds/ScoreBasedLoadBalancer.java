@@ -6,12 +6,10 @@ import java.util.Map;
 
 import org.cloudbus.cloudsim.Vm;
 import org.cloudbus.cloudsim.Cloudlet;
-import org.cloudbus.cloudsim.CloudletScheduler;
 
 /**
  * Score-Based Dynamic Load Balancer (SBDLB) implementation
- * Based on the paper: "A Dynamic Approach to Load Balancing in Cloud
- * Infrastructure"
+ * Based on the paper: "A Dynamic Approach to Load Balancing in Cloud Infrastructure"
  *
  * Key features:
  * - Evaluates VMs based on AVAILABLE (not total) MIPS, RAM, and Bandwidth
@@ -34,12 +32,8 @@ public class ScoreBasedLoadBalancer {
     // Track current task count per VM
     private Map<Integer, Integer> vmTaskCount;
 
-    // Track which cloudlets are assigned to which VM (for resource calculation)
-    private Map<Integer, List<Cloudlet>> vmCloudletMap;
-
     public ScoreBasedLoadBalancer() {
         this.vmTaskCount = new HashMap<>();
-        this.vmCloudletMap = new HashMap<>();
     }
 
     /**
@@ -61,7 +55,7 @@ public class ScoreBasedLoadBalancer {
                 continue; // Skip VMs that exceed threshold
             }
 
-            // Step 2: Get AVAILABLE resources (CRITICAL: not total resources)
+            // Step 2: Get AVAILABLE resources (not total resources)
             double availableMips = getAvailableMips(vm);
             double availableRam = getAvailableRam(vm);
             double availableBw = getAvailableBw(vm);
@@ -85,7 +79,7 @@ public class ScoreBasedLoadBalancer {
             if (availableMips < requiredMips ||
                     availableRam < requiredRam ||
                     availableBw < requiredBw) {
-                continue; // Insufficient resources, assign score of -1 (skip this VM)
+                continue; // Insufficient resources, skip this VM
             }
 
             // Step 5: Compute suitability score (sum of available resources)
@@ -126,7 +120,7 @@ public class ScoreBasedLoadBalancer {
      * y = ((x - xmin) / (xmax - xmin)) * (ymax - ymin) + ymin
      */
     private double normalizeTaskRequirement(long taskLength, long minLength, long maxLength,
-            double minResource, double maxResource) {
+                                            double minResource, double maxResource) {
         if (maxLength == minLength) {
             return minResource; // Avoid division by zero
         }
@@ -138,14 +132,13 @@ public class ScoreBasedLoadBalancer {
     }
 
     /**
-     * Get AVAILABLE MIPS for a VM (CRITICAL FIX)
+     * Get AVAILABLE MIPS for a VM
      * This calculates remaining MIPS, not total capacity
      */
     private double getAvailableMips(Vm vm) {
         double totalMips = vm.getMips() * vm.getNumberOfPes();
 
         // Calculate currently used MIPS based on task count
-        // Simple model: each task uses proportional MIPS
         int currentTasks = vmTaskCount.getOrDefault(vm.getId(), 0);
 
         if (currentTasks == 0) {
@@ -159,14 +152,13 @@ public class ScoreBasedLoadBalancer {
     }
 
     /**
-     * Get AVAILABLE RAM for a VM (CRITICAL FIX)
+     * Get AVAILABLE RAM for a VM
      * Returns remaining RAM, not total
      */
     private double getAvailableRam(Vm vm) {
         int totalRam = vm.getRam();
 
         // Calculate used RAM based on current task count
-        // Each task uses proportional RAM
         int currentTasks = vmTaskCount.getOrDefault(vm.getId(), 0);
 
         if (currentTasks == 0) {
@@ -180,7 +172,7 @@ public class ScoreBasedLoadBalancer {
     }
 
     /**
-     * Get AVAILABLE Bandwidth for a VM (CRITICAL FIX)
+     * Get AVAILABLE Bandwidth for a VM
      * Returns remaining bandwidth, not total
      */
     private double getAvailableBw(Vm vm) {
@@ -241,6 +233,5 @@ public class ScoreBasedLoadBalancer {
      */
     public void reset() {
         vmTaskCount.clear();
-        vmCloudletMap.clear();
     }
 }
