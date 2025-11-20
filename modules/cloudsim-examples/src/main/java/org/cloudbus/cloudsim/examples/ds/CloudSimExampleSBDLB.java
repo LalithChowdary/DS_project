@@ -67,26 +67,22 @@ public class CloudSimExampleSBDLB {
 
     public static void main(String[] args) throws Exception {
         Log.println("=============================================================");
-        Log.println("Starting Fig 3 Replication: Avg Response Time vs DCs vs Threshold");
+        Log.println("Starting CloudSimExampleSBDLB (Single Run)");
         Log.println("=============================================================\n");
 
         // Header for results
         System.out.println("DCs,Threshold,AvgResponseTime,ProcessingTime,Cost");
 
-        // Loop for varying number of Datacenters (1 to 8)
-        for (int dcs = 1; dcs <= 8; dcs++) {
-            // Loop for varying Task Thresholds (2, 3, 4)
-            for (int threshold = 2; threshold <= 4; threshold++) {
-                // Update Threshold in SBDLB (We need to make it configurable)
-                ScoreBasedLoadBalancer.TASK_THRESHOLD = threshold;
+        // Standard Configuration
+        int dcs = 8;
+        int threshold = 3;
+        ScoreBasedLoadBalancer.TASK_THRESHOLD = threshold;
 
-                // Run Simulation
-                runSimulation(dcs, threshold);
-            }
-        }
+        // Run Simulation
+        runSimulation(dcs, threshold);
 
         Log.println("\n=============================================================");
-        Log.println("Finished Fig 3 Replication!");
+        Log.println("Finished CloudSimExampleSBDLB simulation!");
         Log.println("=============================================================");
     }
 
