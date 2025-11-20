@@ -34,7 +34,8 @@ import org.cloudbus.cloudsim.provisioners.RamProvisionerSimple;
  * "A Dynamic Approach to Load Balancing in Cloud Infrastructure"
  *
  * ALL FIXES APPLIED:
- * ✅ Host MIPS Configuration - Set to 1000 MIPS per core (standard for cloud VMs)
+ * ✅ Host MIPS Configuration - Set to 1000 MIPS per core (standard for cloud
+ * VMs)
  * ✅ Storage Units Inconsistency - Fixed to use MB consistently
  * ✅ Bandwidth Units - Fixed to use Mbps (bits per second as per CloudSim)
  * ✅ Waiting Queue Implementation - Proper queue with retry logic
@@ -66,173 +67,199 @@ public class CloudSimExampleSBDLB {
 
     public static void main(String[] args) throws Exception {
         Log.println("=============================================================");
-        Log.println("Starting CloudSimExampleSBDLB with SBDLB algorithm...");
+        Log.println("Starting Fig 3 Replication: Avg Response Time vs DCs vs Threshold");
         Log.println("=============================================================\n");
 
+        // Header for results
+        System.out.println("DCs,Threshold,AvgResponseTime,ProcessingTime,Cost");
+
+        // Loop for varying number of Datacenters (1 to 8)
+        for (int dcs = 1; dcs <= 8; dcs++) {
+            // Loop for varying Task Thresholds (2, 3, 4)
+            for (int threshold = 2; threshold <= 4; threshold++) {
+                // Update Threshold in SBDLB (We need to make it configurable)
+                ScoreBasedLoadBalancer.TASK_THRESHOLD = threshold;
+
+                // Run Simulation
+                runSimulation(dcs, threshold);
+            }
+        }
+
+        Log.println("\n=============================================================");
+        Log.println("Finished Fig 3 Replication!");
+        Log.println("=============================================================");
+    }
+
+    /**
+     * Run a complete simulation with specified parameters
+     */
+    private static void runSimulation(int numDatacenters, int threshold) throws Exception {
         // Initialize CloudSim
         int numUsers = 1;
         Calendar calendar = Calendar.getInstance();
         boolean traceFlag = false;
         CloudSim.init(numUsers, calendar, traceFlag);
 
-        // Create 8 datacenters (as per paper - scaled from Meta's 24)
-        List<Datacenter> datacenters = createDatacenters(8);
-        Log.println("✓ Created " + datacenters.size() + " datacenters");
+        // Create Datacenters
+        List<Datacenter> datacenters = createDatacenters(numDatacenters);
 
-        // ========== SBDLB SIMULATION ==========
-        Log.println("\n--- Running SBDLB Simulation ---");
-        runSimulation("SBDLB", true, 60, 8000);
+        // Create Broker with SBDLB
+        CustomDatacenterBroker broker = new CustomDatacenterBroker("Broker", true);
 
-        // ========== THROTTLED SIMULATION ==========
-        Log.println("\n--- Running Throttled Simulation ---");
-        // Reset CloudSim for new simulation
-        CloudSim.init(numUsers, calendar, traceFlag);
-        datacenters = createDatacenters(8);
-        runSimulation("Throttled", false, 60, 8000);
-
-        Log.println("\n=============================================================");
-        Log.println("Finished CloudSimExampleSBDLB simulation!");
-        Log.println("=============================================================");
-    }
-
-    /**
-     * Run a complete simulation with specified load balancer
-     */
-    private static void runSimulation(String name, boolean useSBDLB, int vmsPerDC, int taskCount)
-            throws Exception {
-
-        // Create custom broker with chosen load balancer
-        CustomDatacenterBroker broker = new CustomDatacenterBroker("Broker-" + name, useSBDLB);
-
-        // Create heterogeneous VMs (60 VMs as per paper Scenario 2)
-        List<Vm> vmList = createHeterogeneousVMs(broker.getId(), vmsPerDC);
+        // Create VMs (18 per DC)
+        List<Vm> vmList = createHeterogeneousVMs(broker.getId(), numDatacenters);
         broker.submitGuestList(vmList);
-        Log.println("✓ Created " + vmList.size() + " heterogeneous VMs");
 
-        // Create cloudlets with realistic task distribution
-        List<Cloudlet> cloudletList = createRealisticCloudlets(broker.getId(), taskCount);
+        // Create Cloudlets (2000 tasks)
+        List<Cloudlet> cloudletList = createRealisticCloudlets(broker.getId(), 2000);
         broker.submitCloudletList(cloudletList);
-        Log.println("✓ Created " + cloudletList.size() + " cloudlets");
-        Log.println("  - Reels (60%): " + (int) (taskCount * REEL_PERCENTAGE));
-        Log.println("  - Images (30%): " + (int) (taskCount * IMAGE_PERCENTAGE));
-        Log.println("  - Text (10%): " + (int) (taskCount * TEXT_PERCENTAGE));
 
         // Start simulation
-        Log.println("\n⏳ Starting simulation...");
-        double startTime = System.currentTimeMillis();
         CloudSim.startSimulation();
-        double endTime = System.currentTimeMillis();
 
         // Get results
         List<Cloudlet> finishedCloudlets = broker.getCloudletReceivedList();
         CloudSim.stopSimulation();
 
-        // Print results
-        Log.println("\n========== " + name + " SIMULATION RESULTS ==========");
-        Log.println("Wall-clock simulation time: " + (endTime - startTime) / 1000.0 + " seconds");
-        Log.println("Max waiting queue size: " + broker.getMaxWaitingQueueSize());
+        // Calculate Metrics
+        calculateMetrics(finishedCloudlets, vmList, numDatacenters, threshold);
+    }
 
-        // Calculate performance metrics (as per paper Section IV-B)
-        calculateMetrics(finishedCloudlets, vmList, name);
+    /**
+     * Calculate and print metrics in CSV format
+     */
+    private static void calculateMetrics(List<Cloudlet> cloudletList, List<Vm> vmList, int dcs, int threshold) {
+        double totalResponseTime = 0.0;
+        int completedTasks = 0;
+
+        double minStartTime = Double.MAX_VALUE;
+        double maxFinishTime = 0.0;
+
+        for (Cloudlet cloudlet : cloudletList) {
+            if (cloudlet.getStatus() == Cloudlet.CloudletStatus.SUCCESS) {
+                // Response Time = Finish Time (since Submission Time is 0)
+                double responseTime = cloudlet.getFinishTime();
+                totalResponseTime += responseTime;
+                completedTasks++;
+
+                minStartTime = Math.min(minStartTime, cloudlet.getExecStartTime());
+                maxFinishTime = Math.max(maxFinishTime, cloudlet.getFinishTime());
+            }
+        }
+
+        double avgResponseTime = completedTasks > 0 ? totalResponseTime / completedTasks : 0.0;
+        double dcProcessingTime = maxFinishTime - minStartTime;
+        double operationalCost = (dcProcessingTime / 1000.0) * 3.0; // $3/sec
+
+        // Print CSV row: DCs, Threshold, AvgResponseTime, ProcessingTime, Cost
+        System.out.println(String.format("%d,%d,%.2f,%.2f,%.2f",
+                dcs, threshold, avgResponseTime, dcProcessingTime, operationalCost));
     }
 
     /**
      * FIXED: Create heterogeneous VMs based on Table III specifications
      * Units fixed: Storage in MB, Bandwidth in Mbps
      */
-    private static List<Vm> createHeterogeneousVMs(int userId, int totalVms) {
+    /**
+     * FIXED: Create heterogeneous VMs based on Table III specifications (Updated)
+     * FIXED: Create VMs according to specific distribution per Datacenter
+     * Each DC has 4 Hosts with specific VM mix:
+     * Host 1: 3 VMs of Type 2
+     * Host 2: 6 VMs of Type 1
+     * Host 3: 3 VMs of Type 3
+     * Host 4: 2 Type 1 + 2 Type 2 + 2 Type 3
+     * Total: 8 Type 1, 5 Type 2, 5 Type 3 = 18 VMs per DC
+     */
+    private static List<Vm> createHeterogeneousVMs(int userId, int numDatacenters) {
         List<Vm> vmList = new ArrayList<>();
+        int vmId = 0;
 
-        // Create equal split: 50% low-spec, 50% high-spec
-        int lowSpecCount = totalVms / 2;
+        for (int dc = 0; dc < numDatacenters; dc++) {
+            // Host 1: 3 Type 2 VMs
+            for (int i = 0; i < 3; i++)
+                vmList.add(createVm(vmId++, userId, 2));
 
-        // Low-spec VMs (Table III) - ALL UNITS VERIFIED
-        for (int i = 0; i < lowSpecCount; i++) {
-            Vm vm = new Vm(
-                    i,              // id
-                    userId,         // userId
-                    500.0,          // mips - 500 MIPS
-                    1,              // pes - 1 core
-                    1024,           // ram - 1024 MB ✓
-                    1000L,          // bw - 1000 Mbps ✓
-                    10240L,         // size - 10 GB = 10240 MB ✓ FIXED
-                    "Xen",          // vmm
-                    new CloudletSchedulerTimeShared());
-            vmList.add(vm);
-        }
+            // Host 2: 6 Type 1 VMs
+            for (int i = 0; i < 6; i++)
+                vmList.add(createVm(vmId++, userId, 1));
 
-        // High-spec VMs (Table III) - ALL UNITS VERIFIED
-        for (int i = lowSpecCount; i < totalVms; i++) {
-            Vm vm = new Vm(
-                    i,              // id
-                    userId,         // userId
-                    1000.0,         // mips - 1000 MIPS
-                    2,              // pes - 2 cores
-                    2048,           // ram - 2048 MB ✓
-                    2000L,          // bw - 2000 Mbps ✓
-                    20480L,         // size - 20 GB = 20480 MB ✓ FIXED
-                    "Xen",          // vmm
-                    new CloudletSchedulerTimeShared());
-            vmList.add(vm);
+            // Host 3: 3 Type 3 VMs
+            for (int i = 0; i < 3; i++)
+                vmList.add(createVm(vmId++, userId, 3));
+
+            // Host 4: 2 Type 1 + 2 Type 2 + 2 Type 3
+            for (int i = 0; i < 2; i++)
+                vmList.add(createVm(vmId++, userId, 1));
+            for (int i = 0; i < 2; i++)
+                vmList.add(createVm(vmId++, userId, 2));
+            for (int i = 0; i < 2; i++)
+                vmList.add(createVm(vmId++, userId, 3));
         }
 
         return vmList;
     }
 
+    private static Vm createVm(int id, int userId, int type) {
+        double mips = 0;
+        int pes = 0;
+        int ram = 0;
+        long bw = 0;
+        long size = 0;
+
+        switch (type) {
+            case 1: // Low
+                mips = 500.0;
+                pes = 1;
+                ram = 1024;
+                bw = 1000L;
+                size = 10240L;
+                break;
+            case 2: // Medium
+                mips = 1000.0;
+                pes = 1;
+                ram = 2048;
+                bw = 1500L;
+                size = 20480L;
+                break;
+            case 3: // High
+                mips = 2000.0;
+                pes = 2;
+                ram = 4096;
+                bw = 2000L;
+                size = 40960L; // 1000 MIPS/core * 2
+                break;
+        }
+
+        return new Vm(id, userId, mips, pes, ram, bw, size, "Xen", new CloudletSchedulerTimeShared());
+    }
+
     /**
-     * FIXED: Create datacenters with heterogeneous hosts (Table I and II)
-     * All units verified and corrected
+     * FIXED: Create datacenters with 4 Hosts each as per user spec
      */
     private static List<Datacenter> createDatacenters(int count) throws Exception {
         List<Datacenter> list = new ArrayList<>();
 
         for (int i = 0; i < count; i++) {
             String name = "Datacenter-" + i;
-
-            // Create heterogeneous hosts (mix of Type 1 and Type 2)
             List<Host> hostList = new ArrayList<>();
 
-            // Type 1 hosts (Table II) - FIXED UNITS
-            for (int h = 0; h < 3; h++) {
-                hostList.add(createHost(
-                        h,              // id
-                        1000.0,         // mips per core - 1000 MIPS ✓ VERIFIED
-                        4,              // cores - 4 ✓
-                        1024,           // ram - 1024 MB ✓
-                        1000L,          // bw - 1000 Mbps ✓
-                        10240L          // storage - 10 GB = 10240 MB ✓ FIXED
-                ));
-            }
+            // Host 1 (Medium Host - Type 1)
+            hostList.add(createHost(0, 1250.0, 4, 8192, 5000L, 204800L));
 
-            // Type 2 hosts (Table II) - FIXED UNITS
-            for (int h = 3; h < 6; h++) {
-                hostList.add(createHost(
-                        h,              // id
-                        1000.0,         // mips per core - 1000 MIPS ✓ VERIFIED
-                        8,              // cores - 8 ✓
-                        2048,           // ram - 2048 MB ✓
-                        2000L,          // bw - 2000 Mbps ✓
-                        20480L          // storage - 20 GB = 20480 MB ✓ FIXED
-                ));
-            }
+            // Host 2 (Medium Host - Type 1)
+            hostList.add(createHost(1, 1250.0, 4, 8192, 5000L, 204800L));
 
-            // DatacenterCharacteristics (Table I) - ALL VERIFIED
-            double timeZone = 0.0;
-            double costPerSec = 3.0;        // $3/sec CPU usage ✓
-            double costPerMem = 0.004;      // $0.004/MB memory ✓
-            double costPerStorage = 0.0001; // $0.0001/MB storage ✓
-            double costPerBw = 0.01;        // $0.01/Mbps bandwidth ✓
+            // Host 3 (High Host - Type 2)
+            hostList.add(createHost(2, 1125.0, 8, 16384, 10000L, 409600L));
+
+            // Host 4 (High Host - Type 2) - Mixed VMs
+            hostList.add(createHost(3, 1125.0, 8, 16384, 10000L, 409600L));
 
             DatacenterCharacteristics characteristics = new DatacenterCharacteristics(
-                    "x86", "Linux", "Xen", hostList, timeZone,
-                    costPerSec, costPerMem, costPerStorage, costPerBw);
+                    "x86", "Linux", "Xen", hostList, 0.0, 3.0, 0.004, 0.0001, 0.01);
 
-            VmAllocationPolicySimple vmPolicy = new VmAllocationPolicySimple(hostList);
-            List<Storage> storageList = new ArrayList<>();
-            double schedulingInterval = 0.5;
-
-            Datacenter dc = new Datacenter(name, characteristics, vmPolicy,
-                    storageList, schedulingInterval);
+            Datacenter dc = new Datacenter(name, characteristics, new VmAllocationPolicySimple(hostList),
+                    new ArrayList<>(), 0.0);
             list.add(dc);
         }
 
@@ -241,10 +268,9 @@ public class CloudSimExampleSBDLB {
 
     /**
      * FIXED: Helper to create a host with specified resources
-     * Storage parameter now in MB (consistent with CloudSim)
      */
     private static Host createHost(int id, double mips, int cores,
-                                   int ram, long bw, long storage) {
+            int ram, long bw, long storage) {
         List<Pe> peList = new ArrayList<>();
         for (int i = 0; i < cores; i++) {
             peList.add(new Pe(i, new PeProvisionerSimple(mips)));
@@ -254,38 +280,20 @@ public class CloudSimExampleSBDLB {
                 id,
                 new RamProvisionerSimple(ram),
                 new BwProvisionerSimple(bw),
-                storage,    // Now correctly in MB
+                storage,
                 peList,
                 new VmSchedulerSpaceShared(peList));
     }
 
     /**
-     * Create cloudlets with realistic task distribution:
-     * 60% Reels, 30% Images, 10% Text (from paper Section V-A)
+     * FIXED: Create 2000 tasks with uniform MIPS (25,000 MI)
      */
     private static List<Cloudlet> createRealisticCloudlets(int userId, int totalTasks) {
         List<Cloudlet> cloudletList = new ArrayList<>();
+        long fixedLength = 25000L; // Fixed MIPS for calibration
 
-        int reelCount = (int) (totalTasks * REEL_PERCENTAGE);
-        int imageCount = (int) (totalTasks * IMAGE_PERCENTAGE);
-        int textCount = totalTasks - reelCount - imageCount;
-
-        // Create Reels (60%)
-        for (int i = 0; i < reelCount; i++) {
-            long length = randomInRange(REEL_MIN_MI, REEL_MAX_MI);
-            cloudletList.add(createCloudlet(i, userId, length, 2));
-        }
-
-        // Create Images (30%)
-        for (int i = reelCount; i < reelCount + imageCount; i++) {
-            long length = randomInRange(IMAGE_MIN_MI, IMAGE_MAX_MI);
-            cloudletList.add(createCloudlet(i, userId, length, 1));
-        }
-
-        // Create Text (10%)
-        for (int i = reelCount + imageCount; i < totalTasks; i++) {
-            long length = randomInRange(TEXT_MIN_MI, TEXT_MAX_MI);
-            cloudletList.add(createCloudlet(i, userId, length, 1));
+        for (int i = 0; i < totalTasks; i++) {
+            cloudletList.add(createCloudlet(i, userId, fixedLength, 1));
         }
 
         return cloudletList;
@@ -360,15 +368,24 @@ public class CloudSimExampleSBDLB {
             }
         }
 
-        // Count tasks on high-spec vs low-spec VMs
+        // Count tasks on Low, Medium, and High spec VMs
         int lowSpecTasks = 0;
+        int mediumSpecTasks = 0;
         int highSpecTasks = 0;
+
+        int totalVms = vmList.size();
+        int type1Count = totalVms / 3;
+        int type2Count = totalVms / 3;
+        // Type 3 is the rest
+
         for (Map.Entry<Integer, Integer> entry : vmTaskDistribution.entrySet()) {
             int vmId = entry.getKey();
             int taskCount = entry.getValue();
 
-            if (vmId < vmList.size() / 2) {
+            if (vmId < type1Count) {
                 lowSpecTasks += taskCount;
+            } else if (vmId < type1Count + type2Count) {
+                mediumSpecTasks += taskCount;
             } else {
                 highSpecTasks += taskCount;
             }
@@ -387,8 +404,9 @@ public class CloudSimExampleSBDLB {
         Log.println("Operational Cost:          $" + String.format("%.2f", operationalCost));
         Log.println("─────────────────────────────────────────────────────────");
         Log.println("Task Distribution:");
-        Log.println("  Low-spec VMs:            " + lowSpecTasks + " tasks");
-        Log.println("  High-spec VMs:           " + highSpecTasks + " tasks");
+        Log.println("  Low-spec VMs (Type 1):   " + lowSpecTasks + " tasks");
+        Log.println("  Medium-spec VMs (Type 2):" + mediumSpecTasks + " tasks");
+        Log.println("  High-spec VMs (Type 3):  " + highSpecTasks + " tasks");
         Log.println("  High-spec ratio:         " +
                 String.format("%.1f%%", (highSpecTasks * 100.0 / completedTasks)));
         Log.println("─────────────────────────────────────────────────────────\n");
@@ -536,7 +554,7 @@ class CustomDatacenterBroker extends DatacenterBroker {
     /**
      * FIXED: Handle cloudlet completion - Release resources and retry queue
      * Implements: "Finished Tasks" → "Release resources from assigned VM"
-     *             → "Queue Size > 0" check
+     * → "Queue Size > 0" check
      */
     @Override
     protected void processCloudletReturn(SimEvent ev) {

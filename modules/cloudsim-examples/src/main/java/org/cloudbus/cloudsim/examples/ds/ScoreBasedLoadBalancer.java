@@ -9,7 +9,8 @@ import org.cloudbus.cloudsim.Cloudlet;
 
 /**
  * Score-Based Dynamic Load Balancer (SBDLB) implementation
- * Based on the paper: "A Dynamic Approach to Load Balancing in Cloud Infrastructure"
+ * Based on the paper: "A Dynamic Approach to Load Balancing in Cloud
+ * Infrastructure"
  *
  * Key features:
  * - Evaluates VMs based on AVAILABLE (not total) MIPS, RAM, and Bandwidth
@@ -19,7 +20,7 @@ import org.cloudbus.cloudsim.Cloudlet;
  */
 public class ScoreBasedLoadBalancer {
 
-    private static final int TASK_THRESHOLD = 3;
+    public static int TASK_THRESHOLD = 3;
 
     // Task type ranges in MI (Million Instructions) - from paper Section V-B
     private static final long REEL_MIN_MI = 10000000L; // 10 MB * 1000 CI
@@ -120,7 +121,7 @@ public class ScoreBasedLoadBalancer {
      * y = ((x - xmin) / (xmax - xmin)) * (ymax - ymin) + ymin
      */
     private double normalizeTaskRequirement(long taskLength, long minLength, long maxLength,
-                                            double minResource, double maxResource) {
+            double minResource, double maxResource) {
         if (maxLength == minLength) {
             return minResource; // Avoid division by zero
         }
