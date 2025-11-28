@@ -394,6 +394,8 @@ public class ProposedBroker extends DatacenterBroker {
 
         if (getCloudletList().isEmpty() && cloudletsSubmitted == 0) {
             simulationFinished = true;
+            // Mark as FINISHED so peer doesn't try to take over
+            redis.hset(1, "Global", "LB_Status", "LB_" + lbId + "_Status", "FINISHED");
             Log.printLine(getName() + ": All Cloudlets finished. Stopping Heartbeats.");
         }
     }
@@ -567,12 +569,6 @@ public class ProposedBroker extends DatacenterBroker {
                 Log.printLine(getName() + ": Retrying Vm #" + vmId + " in Datacenter #" + nextDcId);
                 Vm vm = VmList.getById(getGuestList(), vmId);
                 if (vm != null) {
-                    sendNow(nextDcId, CloudActionTags.VM_CREATE_ACK, vm); // Use VM_CREATE_ACK? No, VM_CREATE
-                    // Wait, CloudActionTags.VM_CREATE is correct.
-                    // But DatacenterBroker uses createVmsInDatacenter which sends VM_CREATE_ACK?
-                    // No, createVmsInDatacenter sends VM_CREATE_ACK.
-                    // Wait, DatacenterBroker line 336: sendNow(datacenterId,
-                    // CloudActionTags.VM_CREATE_ACK, vm);
                     // Why VM_CREATE_ACK? That seems wrong. It should be VM_CREATE.
                     // But if DatacenterBroker does it, I should follow.
                     // Actually, CloudSim 3.0 DatacenterBroker sends VM_CREATE_ACK to Datacenter?
@@ -621,13 +617,16 @@ public class ProposedBroker extends DatacenterBroker {
                     schedule(getId(), MONITOR_INTERVAL, ProposedTags.PERIODIC_MONITOR);
                 }
             } else if (ev.getTag() == ProposedTags.LB_HEARTBEAT) {
+                // Check if we should stop
+                if (simulationFinished || failed) {
+                    return;
+                }
+
                 // Send LB Heartbeat to L1 Cache
                 sendHeartbeat();
 
                 // Reschedule Next Heartbeat
-                if (!simulationFinished && !failed) {
-                    schedule(getId(), LB_HEARTBEAT_INTERVAL, ProposedTags.LB_HEARTBEAT);
-                }
+                schedule(getId(), LB_HEARTBEAT_INTERVAL, ProposedTags.LB_HEARTBEAT);
             } else if (ev.getTag() == ProposedTags.VM_HEARTBEAT) {
                 // ... (existing code)
                 // Handle VM Heartbeat Simulation
@@ -690,6 +689,17 @@ public class ProposedBroker extends DatacenterBroker {
         if (otherBroker != null && !takeoverDone) {
             // Redis-Based Failure Detection
             // Use getLbId() for Redis keys to match sendHeartbeat
+            String status = redis.hget(1, "Global", "LB_Status", "LB_" + otherBroker.getLbId() + "_Status");
+
+            // DEBUG: Print status
+            // Log.printLine(getName() + ": Checking peer LB_" + otherBroker.getLbId() + "
+            // status: " + status);
+
+            // If peer is FINISHED, do not treat as failure
+            if ("FINISHED".equals(status)) {
+                return;
+            }
+
             String heartbeatStr = redis.hget(1, "Global", "LB_Status", "LB_" + otherBroker.getLbId() + "_Heartbeat");
 
             boolean peerAlive = true;

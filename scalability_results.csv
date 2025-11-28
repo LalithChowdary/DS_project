@@ -1,4 +1,0 @@
-Configuration,Total_VMs,Avg_Response_Time_s,Throughput_tasks_s
-2_Datacenters,20,129.23,0.44
-4_Datacenters,40,140.96,0.66
-8_Datacenters,80,138.77,1.32

@@ -15,12 +15,18 @@ import java.util.*;
  * - MLFQ Scheduling (Text/Image/Reel)
  * - Two-Level Redis Cache (Mocked)
  * - Fault Tolerance & Work Stealing
+ * 
+ * Experimental Setup:
+ * - 2 Datacenters (1 per LB/Zone)
+ * - 4 Hosts per Datacenter (8 cores, 16GB RAM, 10K MIPS/core, 10Gbps, 1TB)
+ * - 18 VMs per Datacenter: 10 Small + 6 Medium + 2 Large = 36 total VMs
+ * - 500 Tasks
  */
 public class CloudSimExampleProposed {
 
-    private static final int NUM_DATACENTERS = 8;
-    private static final int VMS_PER_DATACENTER = 18;
-    private static final int TOTAL_TASKS = 2000;
+    private static final int NUM_DATACENTERS = 2; // 1 per zone
+    private static final int VMS_PER_DATACENTER = 18; // 10 Small + 6 Medium + 2 Large
+    private static final int TOTAL_TASKS = 500;
 
     public static void main(String[] args) {
         Log.printLine("Starting CloudSimExampleProposed...");
@@ -47,10 +53,10 @@ public class CloudSimExampleProposed {
             broker2.setOtherBroker(broker1);
 
             // 4. Create VMs and Assign to Brokers
-            // LB1 manages Zone 1 (Datacenters 0-3, VMs 0-71)
-            // LB2 manages Zone 2 (Datacenters 4-7, VMs 72-143)
-            List<Vm> vmsList1 = createVMs(broker1.getId(), 0, 4 * VMS_PER_DATACENTER);
-            List<Vm> vmsList2 = createVMs(broker2.getId(), 4 * VMS_PER_DATACENTER, 4 * VMS_PER_DATACENTER);
+            // LB1 manages Zone 1 (Datacenter 0, VMs 0-17)
+            // LB2 manages Zone 2 (Datacenter 1, VMs 18-35)
+            List<Vm> vmsList1 = createVMs(broker1.getId(), 0, VMS_PER_DATACENTER);
+            List<Vm> vmsList2 = createVMs(broker2.getId(), VMS_PER_DATACENTER, VMS_PER_DATACENTER);
 
             broker1.submitGuestList(vmsList1);
             broker2.submitGuestList(vmsList2);
@@ -108,7 +114,7 @@ public class CloudSimExampleProposed {
         // 4 Hosts per Datacenter
         for (int i = 0; i < 4; i++) {
             int mips = 10000; // 10k MIPS per core
-            int ram = 16384; // 16GB
+            int ram = 16384; // 16GB RAM per host
             long storage = 1000000; // 1TB
             int bw = 10000; // 10Gbps
 
@@ -154,27 +160,33 @@ public class CloudSimExampleProposed {
     private static List<Vm> createVMs(int brokerId, int startId, int count) {
         List<Vm> vms = new ArrayList<>();
 
-        // Type 1: 1 Core, 2GB RAM (Small)
-        // Type 2: 2 Core, 4GB RAM (Medium)
-        // Type 3: 4 Core, 8GB RAM (Large)
+        // VM Types per your experimental setup:
+        // Type 1 (Small): 1 Core, 2GB RAM, 2500 MIPS - 10 VMs
+        // Type 2 (Medium): 2 Core, 4GB RAM, 5000 MIPS - 6 VMs
+        // Type 3 (Large): 4 Core, 8GB RAM, 10000 MIPS - 2 VMs
+        // Total: 18 VMs per Datacenter
+        // Total RAM: 10*2 + 6*4 + 2*8 = 20 + 24 + 16 = 60GB (fits in 4 hosts * 16GB =
+        // 64GB)
 
         for (int i = 0; i < count; i++) {
-            // Mix of VM Types (Type 1, 2, 3)
-            // 10 Small (2GB), 6 Medium (4GB), 2 Large (8GB) -> Total 60GB (Fits in 64GB)
-            int mips = 2500;
+            int mips;
             long size = 10000; // image size (MB)
-            int ram = 2048;
+            int ram;
             long bw = 1000;
-            int pesNumber = 1;
+            int pesNumber;
             String vmm = "Xen";
 
-            if (i >= 10 && i < 16) { // Medium (6 VMs)
+            if (i < 10) { // Small VMs (0-9)
+                mips = 2500;
+                ram = 2048; // 2GB
+                pesNumber = 1;
+            } else if (i < 16) { // Medium VMs (10-15)
                 mips = 5000;
-                ram = 4096;
+                ram = 4096; // 4GB
                 pesNumber = 2;
-            } else if (i >= 16) { // Large (2 VMs)
+            } else { // Large VMs (16-17)
                 mips = 10000;
-                ram = 8192;
+                ram = 8192; // 8GB
                 pesNumber = 4;
             }
 
